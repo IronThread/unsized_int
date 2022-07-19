@@ -1,0 +1,13 @@
+[package]
+name = "unsized_int" 
+version = "0.1.0"
+authors = ["IronThread <santinofuenteskillian@gmail.com>"]
+edition = "2018"
+license = "Apache-2.0/MIT"
+readme = "README.md"
+description = "An dynamically and statically allocated number encoded in base 10 two digits per byte and little endian."
+repository = "https://github.com/IronThread/unsized_int"
+keywords = ["number","unsized","dst"]
+categories = []
+
+[dependencies]
