@@ -1,5 +1,10 @@
+//! Library providing [`UN`] a number of dynamically allocated capacity,encoded in base 10,2 digits 
+//! per byte and little endian,[`UNArr`],like [`UN`] but with a generic constant capacity and
+//! [`SliceUN`] a custom DST that both previous types deref to.
+
 use ::{
     std::{
+        borrow::{Borrow, BorrowMut},
         cmp::Ordering,
         convert::TryFrom,
         error::Error,
