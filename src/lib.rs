@@ -3,6 +3,7 @@
 //! [`SliceUN`] a custom DST that both previous types deref to.
 
 use ::{
+    arrayvec::ArrayVec,
     std::{
         borrow::{Borrow, BorrowMut},
         cmp::Ordering,
@@ -12,10 +13,8 @@ use ::{
         hash::Hash,
         hint::unreachable_unchecked,
         marker::PhantomData,
-        mem::MaybeUninit,
         num::ParseIntError,
         ops::{Add, AddAssign, Deref, DerefMut, Mul, MulAssign},
-        slice,
         str::FromStr,
     }
 };
@@ -25,17 +24,17 @@ pub struct UN {
     vec: Vec<u8>
 }
 
-impl<T: Deref<Target = SliceUN>> PartialEq<T> for UN {
+impl<T: AsRef<SliceUN>> PartialEq<T> for UN {
     fn eq(&self, other: &T) -> bool {
-        self.deref().vec.eq(&other.deref().vec)
+        self.deref().vec.eq(&other.as_ref().vec)
     } 
 }
 
 impl Eq for UN {}
 
-impl<T: Deref<Target = SliceUN>> PartialOrd<T> for UN {
+impl<T: AsRef<SliceUN>> PartialOrd<T> for UN {
     fn partial_cmp(&self, other: &T) -> Option<Ordering> {
-        self.deref().partial_cmp(other.deref())
+        self.deref().partial_cmp(other.as_ref())
     }
 }
 
@@ -52,16 +51,17 @@ impl UN {
         }
     }
 
-    // 10 = 0 1
-    // 9 = 9
     pub fn saturating_sub<T: AsRef<SliceUN>>(&mut self, other: T) {
+        if other.as_ref() > self {
+            self.vec.clear();
+            return
+        }
+
         let mut b = true;
 
-        let a: &mut UN = unsafe { &mut *(self as *mut _) };
         let len = self.vec.len();
         let mut it1 = self.vec.iter_mut();
 
-        let mut it2len = other.as_ref().vec.len();
         let mut it2 = other.as_ref().vec.iter().copied();
 
         let mut e = if let Some(e3) = it1.next() {
@@ -81,10 +81,17 @@ impl UN {
 
         loop {
             if b {
-                // todo: handle overflow
-                let mut x = get_1(*e) - rest;
+                let mut x = get_1(*e);
+    
+                if x < rest {
+                    x = 10 - rest;
+                    rest = 1;
+                } else {
+                    x -= rest;
+                    rest = 0;
+                }
+                
                 let y = get_1(e2);
-                rest = 0;
 
                 if y > x {
                     rest = 1;
@@ -95,10 +102,15 @@ impl UN {
 
                 b = false;
             } else {
-                // todo: handle overflow
-                let mut x = get_2(*e) - rest;
+                let mut x = get_2(*e);
+                if x < rest {
+                    x = 10 - rest;
+                    rest = 1;
+                } else {
+                    x -= rest;
+                    rest = 0;
+                }
                 let y = get_2(e2);
-                rest = 0;
 
                 if y > x {
                     rest = 1;
@@ -109,30 +121,27 @@ impl UN {
 
 
                 if let Some(e3) = it2.next() {
-                    it2len -= 1;
                     e2 = e3;
                 } else {
-                    if rest > 0 {
-                        e2 = 0;
-                    } else {
-                        break
-                    }
+                    break
                 }
 
-                if let Some(e3) = it1.next() {
-                    e = e3;
-                } else {
-                    for _ in 0..((it2len / 2) + 1) {                
-                        a.vec.push(0);
-                    }
-
-                    let a = unsafe { &mut *(a as *mut UN) };
-
-                    it1 = a.vec[len..].iter_mut();
-                    e = it1.next().unwrap()
-                }
+                e = it1.next().unwrap();
 
                 b = true;
+            }
+        }
+
+
+        let mut i = self.vec.len();
+
+        while i > 0 {
+            i -= 1;
+
+            if self.vec[i] == 0 {
+                self.vec.remove(i);
+            } else {
+                break
             }
         }
     }
@@ -162,7 +171,7 @@ impl BorrowMut<SliceUN> for UN {
     }
 }
 
-impl<T: Deref<Target = SliceUN>> Add<T> for UN {
+impl<T: AsRef<SliceUN>> Add<T> for UN {
     type Output = Self;
 
     fn add(mut self, other: T) -> Self::Output {
@@ -171,7 +180,7 @@ impl<T: Deref<Target = SliceUN>> Add<T> for UN {
     }
 }
 
-impl<T: Deref<Target = SliceUN>> AddAssign<T> for UN {
+impl<T: AsRef<SliceUN>> AddAssign<T> for UN {
     fn add_assign(&mut self, other: T) {
         let mut b = true;
 
@@ -179,8 +188,8 @@ impl<T: Deref<Target = SliceUN>> AddAssign<T> for UN {
         let len = self.vec.len();
         let mut it1 = self.vec.iter_mut();
 
-        let mut it2len = other.deref().vec.len();
-        let mut it2 = other.deref().vec.iter().copied();
+        let mut it2len = other.as_ref().vec.len();
+        let mut it2 = other.as_ref().vec.iter().copied();
 
         let mut e = if let Some(e3) = it1.next() {
             e3
@@ -260,7 +269,7 @@ impl<T: Deref<Target = SliceUN>> AddAssign<T> for UN {
     }
 }
 
-impl<T: Deref<Target = SliceUN>> Mul<T> for UN {
+impl<T: AsRef<SliceUN>> Mul<T> for UN {
     type Output = Self;
 
     fn mul(mut self, other: T) -> Self::Output {
@@ -269,7 +278,7 @@ impl<T: Deref<Target = SliceUN>> Mul<T> for UN {
     }
 }
 
-impl<T: Deref<Target = SliceUN>> MulAssign<T> for UN {
+impl<T: AsRef<SliceUN>> MulAssign<T> for UN {
     fn mul_assign(&mut self, other: T) {
         let mut b = true;
 
@@ -277,8 +286,8 @@ impl<T: Deref<Target = SliceUN>> MulAssign<T> for UN {
         let len = self.vec.len();
         let mut it1 = self.vec.iter_mut();
 
-        let mut it2len = other.deref().vec.len();
-        let mut it2 = other.deref().vec.iter().copied();
+        let mut it2len = other.as_ref().vec.len();
+        let mut it2 = other.as_ref().vec.iter().copied();
 
         let mut e = if let Some(e3) = it1.next() {
             e3
@@ -388,12 +397,30 @@ impl FromStr for UN {
     type Err = ParseIntError;
 
     fn from_str(x: &str) -> Result<Self, Self::Err> {
+        if x.is_empty() {
+            let _: u8 = "".parse()?;
+        }
+
         let mut a = UN::new();
 
         let mut b = false;
 
-        for c in x.chars().rev() {
+        let mut last = 0;
+
+        let mut it = x.chars();
+
+        while let Some(c) = it.next() {
             let e = c.to_string().parse::<u8>()?;
+
+            if e != 0 {
+                last = e;
+                break
+            }
+        }        
+
+        for c in it.rev() {
+            let e = c.to_string().parse::<u8>()?;
+            println!("{}", e);
 
             if b {
                 let x = a.vec.last_mut().unwrap();
@@ -404,6 +431,17 @@ impl FromStr for UN {
             } else {
                 a.vec.push(set_1(0, e));
                 b = true;
+            }
+        }
+
+
+        if last != 0 {
+            if b {
+                let x = a.vec.last_mut().unwrap();
+
+                *x = set_2(*x, last);
+            } else {
+                a.vec.push(set_1(0, last));
             }
         }
 
@@ -441,28 +479,14 @@ impl From<u128> for UN {
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Hash)]
 pub struct SliceUN {
     vec: [u8]
 }
 
 impl SliceUN {
     fn log10(&self) -> usize {
-        let len = self.vec.len();
-
-        if len > 0 {
-            let a = *self.vec.last().unwrap();
-
-            let x = get_2(a);
-
-            if x > 0 {
-                len * 2    
-            } else {
-                (len * 2) - 1
-            }
-        } else {
-            0
-        }    
+        self.iter().len()
     }
 
     fn iter(&self) -> UNIter<'_> {            
@@ -471,11 +495,16 @@ impl SliceUN {
             let a = *self.vec.last().unwrap();
 
             let x = get_2(a);
+            let get_2 = x > 0;
             UNIter {
                 slice: self,
                 index: self.vec.len() - 1,
-                len: self.log10(),
-                get_2: x > 0,
+                len: if get_2 {
+                    self.vec.len() * 2
+                } else {
+                    (self.vec.len() * 2) - 1
+                },
+                get_2,
             }
         } else {
             UNIter {
@@ -485,6 +514,46 @@ impl SliceUN {
                 get_2: true,
             }
         }
+    }
+
+    fn ajust(&self, rep: &str) -> String {
+        use std::fmt::Write;
+
+        let mut it = self.iter();
+        let mut result = String::new();
+
+        if it.len() > 3 {
+            let mut point = false;
+            let mut point_count = 0;
+
+            if (it.len() - 1) % 3 == 0 {
+                point = true;
+            } else if (it.len() - 2) % 3 == 0 {
+                point_count = 1;
+            }   
+            
+            while let Some(c) = it.next() { 
+                write!(result, "{}", c).unwrap();
+        
+                if point && it.len() != 0 {
+                    result.push_str(rep);
+                    point = false;
+                    point_count = 0;
+                } else {
+                    point_count += 1;
+        
+                    if point_count == 2 {
+                        point = true;
+                    }
+                }                                    
+            }        
+        } else {
+            for e in it {
+                write!(result, "{}", e).unwrap();
+            }
+        }
+
+        result
     }
 }
 
@@ -586,22 +655,15 @@ impl Ord for SliceUN {
 
 impl Display for SliceUN  {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut it = self.vec.iter().copied().rev();
 
-        if let Some(e) = it.next() {
-            let a = get_2(e);
+        let it = self.iter();
 
-            if a != 0 {
-                write!(f, "{}", a)?;
-            }
-
-            write!(f, "{}", get_1(e))?;
-        } else {
+        if it.len() == 0 {
             write!(f, "0")?;
-        }
-
-        while let Some(e) = it.next() {
-            write!(f, "{}{}", get_2(e), get_1(e))?;
+        } else {
+            for e in it {
+                write!(f, "{}", e)?;
+            }
         }
 
         Ok(())
@@ -614,41 +676,156 @@ impl Debug for SliceUN  {
     }
 }
 
+#[derive(Clone)]
 pub struct UNArr<const N: usize> {
-    vec: [MaybeUninit<u8>; N],
-    len: usize
+    vec: ArrayVec<u8, N>,
+}
+
+impl<const N: usize, T: AsRef<SliceUN>> PartialEq<T> for UNArr<N> {
+    fn eq(&self, other: &T) -> bool {
+        self.as_ref() == other.as_ref()
+    }
+}
+
+impl<const N: usize> Eq for UNArr<N> {}
+
+impl<const N: usize, T: AsRef<SliceUN>> PartialOrd<T> for UNArr<N> {
+    fn partial_cmp(&self, other: &T) -> Option<Ordering> {
+        self.as_ref().partial_cmp(other.as_ref())
+    }
+}
+
+impl<const N: usize> Ord for UNArr<N> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_ref().cmp(other.as_ref())
+    }
 }
 
 impl<const N: usize> UNArr<N> {
-    pub const MIN: Self = Self::new();
-    pub const MAX: Self = {
-        let max_n = set_2(set_1(0, 9), 9);
-
-        Self {
-            vec: [MaybeUninit::new(max_n); N],
-            len: N
-        }
-    };
-
     pub const fn new() -> Self {
         Self {
-            vec: [MaybeUninit::uninit(); N],
-            len: 0
+            vec: ArrayVec::new_const(),
         }
     }
 
     fn push(&mut self, x: u8) -> Option<()>  {
-        self.vec.get_mut(self.len)?.write(x);
-        self.len += 1;
-        Some(())
+        self.vec.try_push(x).ok()
     }
 
     fn get_slice(&self) -> &[u8] {
-        unsafe { slice::from_raw_parts(self.vec.as_ptr() as *const u8, self.len) }
+        self.vec.as_ref()
     }
 
     fn get_slice_mut(&mut self) -> &mut [u8] {
-        unsafe { slice::from_raw_parts_mut(self.vec.as_mut_ptr() as *mut u8, self.len) }
+        self.vec.as_mut()
+    }
+
+    // todo: make this a const
+    fn max() -> Self {
+        Self {
+            vec: ArrayVec::from([set_2(set_1(0, 9), 9); N])
+        }
+    }
+
+    fn wrapping_sub<const N2: usize>(&mut self, other: UNArr<N2>) {
+        if other.as_ref() > self {
+            let mut d = other.clone();
+
+            d.wrapping_sub(self.clone());
+
+            *self = Self::max();
+            self.wrapping_sub(d);
+            return
+        }
+
+        let mut b = true;
+
+        let len = self.vec.len();
+        let mut it1 = self.vec.iter_mut();
+
+        let mut it2 = other.as_ref().vec.iter().copied();
+
+        let mut e = if let Some(e3) = it1.next() {
+            e3
+        } else {
+            *self = Self::max();
+            self.wrapping_sub(other.clone());
+            return
+        };
+
+        let mut e2 = if let Some(e3) = it2.next() {
+            e3
+        } else {
+            return
+        };        
+
+        let mut rest = 0;
+
+        loop {
+            if b {
+                let mut x = get_1(*e);
+    
+                if x < rest {
+                    x = 10 - rest;
+                    rest = 1;
+                } else {
+                    x -= rest;
+                    rest = 0;
+                }
+                
+                let y = get_1(e2);
+
+                if y > x {
+                    rest = 1;
+                    *e = set_1(*e, 10 - y);                    
+                } else {
+                    *e = set_1(*e, x - y);
+                }
+
+                b = false;
+            } else {
+                let mut x = get_2(*e);
+                if x < rest {
+                    x = 10 - rest;
+                    rest = 1;
+                } else {
+                    x -= rest;
+                    rest = 0;
+                }
+                let y = get_2(e2);
+
+                if y > x {
+                    rest = 1;
+                    *e = set_2(*e, 10 - y);                    
+                } else {
+                    *e = set_2(*e, x - y);
+                }
+
+
+                if let Some(e3) = it2.next() {
+                    e2 = e3;
+                } else {
+                    break
+                }
+
+                e = it1.next().unwrap();
+
+                b = true;
+            }
+        }
+
+
+        let mut i = self.vec.len();
+
+        while i > 0 {
+            i -= 1;
+
+            if self.vec[i] == 0 {
+                self.vec.remove(i);
+            } else {
+                break
+            }
+        }        
     }
 }
 
@@ -676,7 +853,6 @@ impl<const N: usize> BorrowMut<SliceUN> for  UNArr<N> {
     }
 }
 
-
 impl<const N: usize> Deref for UNArr<N> {
     type Target = SliceUN;
 
@@ -688,6 +864,19 @@ impl<const N: usize> Deref for UNArr<N> {
 impl<const N: usize> DerefMut for UNArr<N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *(self.get_slice_mut() as *mut _ as *mut SliceUN) }
+    }
+}
+
+
+impl<const N: usize> Display for UNArr<N> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(self.as_ref(), f)
+    }
+}
+
+impl<const N: usize> Debug for UNArr<N> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(self, f)
     }
 }
 
@@ -732,11 +921,28 @@ impl<const N: usize> FromStr for UNArr<N> {
     type Err = FromStrError<N>;
 
     fn from_str(x: &str) -> Result<Self, Self::Err> {
+        if x.is_empty() {
+            let _: u8 = "".parse().map_err(FromStrError::ParseInt)?;
+        }
+
         let mut arr = UNArr::new();
 
-        let mut b = false;
+        let mut b = false;        
 
-        for c in x.chars().rev() {
+        let mut last = 0;
+
+        let mut it = x.chars();
+
+        while let Some(c) = it.next() {
+            let e = c.to_string().parse::<u8>().map_err(FromStrError::ParseInt)?;
+
+            if e != 0 {
+                last = e;
+                break
+            }
+        }        
+
+        for c in it.rev() {
             let e = c
                     .to_string()
                     .parse::<u8>()
@@ -754,6 +960,19 @@ impl<const N: usize> FromStr for UNArr<N> {
                 }
 
                 b = true;
+            }
+        }
+
+
+        if last != 0 {
+            if b {
+                let x = arr.get_slice_mut().last_mut().unwrap();
+
+                *x = set_2(*x, last);
+            } else {
+                if arr.push(set_1(0, last)).is_none() {
+                    return Err(FromStrError::NBE(NotBigEnough(PhantomData)));
+                }
             }
         }
 
@@ -888,8 +1107,18 @@ mod tests {
         let x = UN::from(9u8);
         a.saturating_sub(&x);
 
+        assert_eq!(a, UN::from(1u8)); 
+       
+        let mut a = UN::from(1000u16);
+
+        let x = UN::from(999u16);
+        a.saturating_sub(&x);
+
         assert_eq!(a, UN::from(1u8));
-        
+
+        a.saturating_sub(&x);
+
+        assert_eq!(a, UN::from(0u8));        
     }
 
     #[test]
@@ -910,4 +1139,22 @@ mod tests {
         assert_eq!(a, UN::from(100u8));
     }
 
+    #[test]
+    fn ajust() {
+        let a = <UNArr<2>>::try_from(1000u16).unwrap();
+
+        assert_eq!(a.ajust("."), "1.000");
+
+        let a = <UNArr<3>>::try_from(10000u16).unwrap();
+
+        assert_eq!(a.ajust("."), "10.000");
+
+        let a = <UNArr<3>>::try_from(100000u32).unwrap();
+
+        assert_eq!(a.ajust("."), "100.000");        
+
+        let a = <UNArr<4>>::try_from(1000000u32).unwrap();
+
+        assert_eq!(a.ajust("."), "1.000.000")
+    }
 }

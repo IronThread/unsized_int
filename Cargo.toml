@@ -11,3 +11,4 @@ keywords = ["number","unsized","dst"]
 categories = []
 
 [dependencies]
+arrayvec = "0"
