@@ -19,6 +19,8 @@ use ::{
     }
 };
 
+/// An unsigned number with a dynamic capacity encoded in base 10 and two digits per byte.
+// todo: examples
 #[derive(Clone, Hash)]
 pub struct UN {
     vec: Vec<u8>
@@ -26,7 +28,7 @@ pub struct UN {
 
 impl<T: AsRef<SliceUN>> PartialEq<T> for UN {
     fn eq(&self, other: &T) -> bool {
-        self.deref().vec.eq(&other.as_ref().vec)
+        self.as_ref() == other.as_ref()
     } 
 }
 
@@ -34,23 +36,57 @@ impl Eq for UN {}
 
 impl<T: AsRef<SliceUN>> PartialOrd<T> for UN {
     fn partial_cmp(&self, other: &T) -> Option<Ordering> {
-        self.deref().partial_cmp(other.as_ref())
+        self.as_ref().partial_cmp(other.as_ref())
     }
 }
 
 impl Ord for UN {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.deref().cmp(other.deref())
+        self.as_ref().cmp(other.as_ref())
     }
 }
 
 impl UN {
+    /// Creates a new `UN` with an empty inner vector,this is the `0` value.
     pub const fn new() -> Self {
         Self {
             vec: Vec::new()
         }
     }
 
+    /// Substracts to `self` value in `other`. If the substraction is less than zero then `self`
+    /// becomes zero.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use unsized_int::UN;
+    /// 
+    /// let mut a = UN::from(6u8);
+    /// 
+    /// let x = UN::from(3u8);
+    /// a.saturating_sub(&x);
+    /// 
+    /// assert_eq!(a, x);
+    /// 
+    /// let mut a = UN::from(10u8);
+    /// 
+    /// let x = UN::from(9u8);
+    /// a.saturating_sub(&x);
+    /// 
+    /// assert_eq!(a, UN::from(1u8)); 
+    /// 
+    /// let mut a = UN::from(1000u16);
+    /// 
+    /// let x = UN::from(999u16);
+    /// a.saturating_sub(&x);
+    /// 
+    /// assert_eq!(a, UN::from(1u8));
+    /// 
+    /// a.saturating_sub(&x);
+    /// 
+    /// assert_eq!(a, UN::from(0u8));
+    /// ``` 
     pub fn saturating_sub<T: AsRef<SliceUN>>(&mut self, other: T) {
         if other.as_ref() > self {
             self.vec.clear();
@@ -58,8 +94,6 @@ impl UN {
         }
 
         let mut b = true;
-
-        let len = self.vec.len();
         let mut it1 = self.vec.iter_mut();
 
         let mut it2 = other.as_ref().vec.iter().copied();
@@ -67,7 +101,6 @@ impl UN {
         let mut e = if let Some(e3) = it1.next() {
             e3
         } else {
-            // wraps
             return
         };
 
@@ -243,8 +276,7 @@ impl<T: AsRef<SliceUN>> AddAssign<T> for UN {
                     e2 = e3;
                 } else {
                     if rest > 0 {
-                        e2 = rest;
-                        rest = 0;
+                        e2 = 0;
                     } else {
                         break
                     }
@@ -292,7 +324,6 @@ impl<T: AsRef<SliceUN>> MulAssign<T> for UN {
         let mut e = if let Some(e3) = it1.next() {
             e3
         } else {
-            self.vec.extend(it2);
             return
         };
 
@@ -341,8 +372,7 @@ impl<T: AsRef<SliceUN>> MulAssign<T> for UN {
                     e2 = e3;
                 } else {
                     if rest > 0 {
-                        e2 = rest;
-                        rest = 0;
+                        e2 = 0;
                     } else {
                         break
                     }
@@ -485,11 +515,7 @@ pub struct SliceUN {
 }
 
 impl SliceUN {
-    fn log10(&self) -> usize {
-        self.iter().len()
-    }
-
-    fn iter(&self) -> UNIter<'_> {            
+    pub fn iter(&self) -> UNIter<'_> {            
 
         if self.vec.len() > 0 {
             let a = *self.vec.last().unwrap();
@@ -516,7 +542,7 @@ impl SliceUN {
         }
     }
 
-    fn ajust(&self, rep: &str) -> String {
+    pub fn ajust(&self, rep: &str) -> String {
         use std::fmt::Write;
 
         let mut it = self.iter();
@@ -708,26 +734,14 @@ impl<const N: usize> UNArr<N> {
         }
     }
 
-    fn push(&mut self, x: u8) -> Option<()>  {
-        self.vec.try_push(x).ok()
-    }
-
-    fn get_slice(&self) -> &[u8] {
-        self.vec.as_ref()
-    }
-
-    fn get_slice_mut(&mut self) -> &mut [u8] {
-        self.vec.as_mut()
-    }
-
     // todo: make this a const
-    fn max() -> Self {
+    pub fn max() -> Self {
         Self {
             vec: ArrayVec::from([set_2(set_1(0, 9), 9); N])
         }
     }
 
-    fn wrapping_sub<const N2: usize>(&mut self, other: UNArr<N2>) {
+    pub fn wrapping_sub<const N2: usize>(&mut self, other: UNArr<N2>) {
         if other.as_ref() > self {
             let mut d = other.clone();
 
@@ -740,7 +754,6 @@ impl<const N: usize> UNArr<N> {
 
         let mut b = true;
 
-        let len = self.vec.len();
         let mut it1 = self.vec.iter_mut();
 
         let mut it2 = other.as_ref().vec.iter().copied();
@@ -857,13 +870,13 @@ impl<const N: usize> Deref for UNArr<N> {
     type Target = SliceUN;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*(self.get_slice() as *const _ as *const SliceUN) }
+        unsafe { &*(self.vec.as_ref() as *const [u8] as *const SliceUN) }
     }
 }
 
 impl<const N: usize> DerefMut for UNArr<N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *(self.get_slice_mut() as *mut _ as *mut SliceUN) }
+        unsafe { &mut *(self.vec.as_mut() as *mut [u8] as *mut SliceUN) }
     }
 }
 
@@ -949,13 +962,13 @@ impl<const N: usize> FromStr for UNArr<N> {
                     .map_err(FromStrError::ParseInt)?;
 
             if b {
-                let x = arr.get_slice_mut().last_mut().unwrap();
+                let x = arr.vec.as_mut().last_mut().unwrap();
 
                 *x = set_2(*x, e);                
 
                 b = false;
             } else {
-                if arr.push(set_1(0, e)).is_none() {
+                if arr.vec.try_push(set_1(0, e)).is_err() {
                     return Err(FromStrError::NBE(NotBigEnough(PhantomData)));
                 }
 
@@ -966,11 +979,11 @@ impl<const N: usize> FromStr for UNArr<N> {
 
         if last != 0 {
             if b {
-                let x = arr.get_slice_mut().last_mut().unwrap();
+                let x = arr.vec.as_mut().last_mut().unwrap();
 
                 *x = set_2(*x, last);
             } else {
-                if arr.push(set_1(0, last)).is_none() {
+                if arr.vec.try_push(set_1(0, last)).is_err() {
                     return Err(FromStrError::NBE(NotBigEnough(PhantomData)));
                 }
             }
@@ -1090,35 +1103,6 @@ mod tests {
     #[test]
     fn mul() {
         assert_eq!(UN::from(2u8) * UN::from(4u8), UN::from(8u8));
-    }
-
-    #[test]
-    fn sub() {
-        let mut a = UN::from(6u8);
-
-        let x = UN::from(3u8);
-        a.saturating_sub(&x);
-
-        assert_eq!(a, x);
-
-        
-        let mut a = UN::from(10u8);
-
-        let x = UN::from(9u8);
-        a.saturating_sub(&x);
-
-        assert_eq!(a, UN::from(1u8)); 
-       
-        let mut a = UN::from(1000u16);
-
-        let x = UN::from(999u16);
-        a.saturating_sub(&x);
-
-        assert_eq!(a, UN::from(1u8));
-
-        a.saturating_sub(&x);
-
-        assert_eq!(a, UN::from(0u8));        
     }
 
     #[test]
