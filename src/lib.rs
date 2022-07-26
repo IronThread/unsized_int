@@ -3,7 +3,6 @@
 //! [`SliceUN`] a custom DST that both previous types deref to.
 
 use ::{
-    arrayvec::ArrayVec,
     std::{
         borrow::{Borrow, BorrowMut},
         cmp::Ordering,
@@ -13,8 +12,10 @@ use ::{
         hash::Hash,
         hint::unreachable_unchecked,
         marker::PhantomData,
+        mem::MaybeUninit,
         num::ParseIntError,
         ops::{Add, AddAssign, Deref, DerefMut, Mul, MulAssign},
+        slice,
         str::FromStr,
     }
 };
@@ -172,7 +173,7 @@ impl UN {
             i -= 1;
 
             if self.vec[i] == 0 {
-                self.vec.remove(i);
+                self.vec.pop();
             } else {
                 break
             }
@@ -181,24 +182,28 @@ impl UN {
 }
 
 impl AsRef<SliceUN> for UN {
+    #[inline]
     fn as_ref(&self) -> &SliceUN {
         self.deref()
     }
 }
 
 impl AsMut<SliceUN> for UN {
+    #[inline]
     fn as_mut(&mut self) -> &mut SliceUN {
         self.deref_mut()
     }
 }
 
 impl Borrow<SliceUN> for UN {
+    #[inline]
     fn borrow(&self) -> &SliceUN {
         self.deref()
     }
 }
 
 impl BorrowMut<SliceUN> for UN {
+    #[inline]
     fn borrow_mut(&mut self) -> &mut SliceUN {
         self.deref_mut()
     }
@@ -207,6 +212,7 @@ impl BorrowMut<SliceUN> for UN {
 impl<T: AsRef<SliceUN>> Add<T> for UN {
     type Output = Self;
 
+    #[inline]
     fn add(mut self, other: T) -> Self::Output {
         self += other;
         self
@@ -304,6 +310,7 @@ impl<T: AsRef<SliceUN>> AddAssign<T> for UN {
 impl<T: AsRef<SliceUN>> Mul<T> for UN {
     type Output = Self;
 
+    #[inline]
     fn mul(mut self, other: T) -> Self::Output {
         self *= other;
         self
@@ -398,12 +405,14 @@ impl<T: AsRef<SliceUN>> MulAssign<T> for UN {
 }
 
 impl Display for UN  {
+    #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Display::fmt(self.deref(), f)
     }
 }
 
 impl Debug for UN  {
+    #[inline]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Display::fmt(self.deref(), f)
     }
@@ -412,12 +421,14 @@ impl Debug for UN  {
 impl Deref for UN {
     type Target = SliceUN;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         unsafe { &*(&*self.vec as *const _ as *const SliceUN) }
     }
 }
 
 impl DerefMut for UN {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *(&mut *self.vec as *mut _ as *mut SliceUN) }
     }
@@ -450,7 +461,6 @@ impl FromStr for UN {
 
         for c in it.rev() {
             let e = c.to_string().parse::<u8>()?;
-            println!("{}", e);
 
             if b {
                 let x = a.vec.last_mut().unwrap();
@@ -480,30 +490,35 @@ impl FromStr for UN {
 }
 
 impl From<u8> for UN {
+    #[inline]
     fn from(x: u8) -> Self {
         x.to_string().parse().unwrap()
     }
 }
 
 impl From<u16> for UN {
+    #[inline]
     fn from(x: u16) -> Self {
         x.to_string().parse().unwrap()
     }
 }
 
 impl From<u32> for UN {
+    #[inline]
     fn from(x: u32) -> Self {
         x.to_string().parse().unwrap()
     }
 }
 
 impl From<u64> for UN {
+    #[inline]
     fn from(x: u64) -> Self {
         x.to_string().parse().unwrap()
     }
 }
 
 impl From<u128> for UN {
+    #[inline]
     fn from(x: u128) -> Self {
         x.to_string().parse().unwrap()
     }
@@ -515,6 +530,17 @@ pub struct SliceUN {
 }
 
 impl SliceUN {
+    /// Creates an iterator that yields all the base 10 digits of this number.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use unsized_int::UN;
+    /// 
+    /// let a = UN::from(100u8);
+    /// 
+    /// assert_eq!(a.iter().collect::<Vec<u8>>(), [1, 0, 0]);
+    /// ```
     pub fn iter(&self) -> UNIter<'_> {            
 
         if self.vec.len() > 0 {
@@ -583,6 +609,7 @@ impl SliceUN {
     }
 }
 
+/// Struct created by [`SliceUN::iter`].
 pub struct UNIter<'a> {
     slice: &'a SliceUN,
     index: usize,
@@ -614,70 +641,55 @@ impl<'a> Iterator for UNIter<'a> {
         }
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len, Some(self.len))
     }
 }
 
 impl<'a> ExactSizeIterator for UNIter<'a> {
+    #[inline]
     fn len(&self) -> usize {
         self.len
     }
 }
 
 impl AsRef<SliceUN> for SliceUN {
+    #[inline]
     fn as_ref(&self) -> &Self {
         self
     }
 }
 
 impl AsMut<SliceUN> for SliceUN {
+    #[inline]
     fn as_mut(&mut self) -> &mut Self {
         self
     }
 }
 
 impl PartialOrd for SliceUN {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for SliceUN {
+    #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
-        let mut it1 = self.iter();
-        let mut it2 = other.iter();
+        let it1 = self.iter();
+        let it2 = other.iter();
 
         if it1.len() < it2.len() {
-            for _ in 0..it2.len() - it1.len() {
-                let a = 0.cmp(
-                    &it2.next()
-                        .unwrap_or_else(|| unsafe { unreachable_unchecked() }),
-                );
-
-                match a {
-                    Ordering::Equal => (),
-                    _ => return a,
-                }
-            }
+            Ordering::Less
         } else if it1.len() > it2.len() {
-            for _ in 0..it1.len() - it2.len() {
-                let a = it1
-                    .next()
-                    .unwrap_or_else(|| unsafe { unreachable_unchecked() })
-                    .cmp(&0);
-
-                match a {
-                    Ordering::Equal => (),
-                    _ => return a,
-                }
-            }
+            Ordering::Greater
+        } else {
+            it1.cmp(it2)
         }
-
-        it1.cmp(it2)
     }
 }
-
 
 impl Display for SliceUN  {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -702,9 +714,10 @@ impl Debug for SliceUN  {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct UNArr<const N: usize> {
-    vec: ArrayVec<u8, N>,
+    vec: [MaybeUninit<u8>; N],
+    len: usize,
 }
 
 impl<const N: usize, T: AsRef<SliceUN>> PartialEq<T> for UNArr<N> {
@@ -728,50 +741,71 @@ impl<const N: usize> Ord for UNArr<N> {
 }
 
 impl<const N: usize> UNArr<N> {
+    pub const MIN: Self = Self::new();
+    pub const MAX: Self = Self {
+        vec: [MaybeUninit::new(set_2(set_1(0, 9), 9)); N],
+        len: N
+    };
+
     pub const fn new() -> Self {
         Self {
-            vec: ArrayVec::new_const(),
+            vec: [MaybeUninit::uninit(); N],
+            len: 0,
         }
     }
 
-    // todo: make this a const
-    pub fn max() -> Self {
-        Self {
-            vec: ArrayVec::from([set_2(set_1(0, 9), 9); N])
-        }
+    fn push(&mut self, x: u8) -> Option<()> {
+        self.vec.get_mut(self.len)?.write(x);
+        self.len += 1;
+        Some(())
+    }
+
+    fn pop(&mut self) -> Option<u8> {
+        let new_len = self.len.checked_sub(1)?;
+        let x = self.get_slice()[new_len];
+        self.len = new_len;
+        Some(x)
+    }
+
+    fn get_slice(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self.vec.as_ptr().cast(), self.len) }
+    }
+
+    fn get_slice_mut(&mut self) -> &mut [u8] {
+        unsafe { slice::from_raw_parts_mut(self.vec.as_mut_ptr().cast(), self.len) }
     }
 
     pub fn wrapping_sub<const N2: usize>(&mut self, other: UNArr<N2>) {
         if other.as_ref() > self {
-            let mut d = other.clone();
+            let mut d = other;
 
-            d.wrapping_sub(self.clone());
+            d.wrapping_sub(*self);
 
-            *self = Self::max();
+            *self = Self::MAX;
             self.wrapping_sub(d);
             return
         }
 
         let mut b = true;
 
-        let mut it1 = self.vec.iter_mut();
+        let mut it1 = self.get_slice_mut().iter_mut();
 
-        let mut it2 = other.as_ref().vec.iter().copied();
-
-        let mut e = if let Some(e3) = it1.next() {
-            e3
-        } else {
-            *self = Self::max();
-            self.wrapping_sub(other.clone());
-            return
-        };
+        let mut it2 = other.get_slice().iter().copied();
 
         let mut e2 = if let Some(e3) = it2.next() {
             e3
         } else {
             return
-        };        
+        };
 
+        let mut e = if let Some(e3) = it1.next() {
+            e3
+        } else {
+            *self = Self::MAX;
+            self.wrapping_sub(other);
+            return
+        };
+        
         let mut rest = 0;
 
         loop {
@@ -828,13 +862,13 @@ impl<const N: usize> UNArr<N> {
         }
 
 
-        let mut i = self.vec.len();
+        let mut i = self.get_slice().len();
 
         while i > 0 {
             i -= 1;
 
-            if self.vec[i] == 0 {
-                self.vec.remove(i);
+            if self.get_slice()[i] == 0 {
+                self.pop();
             } else {
                 break
             }
@@ -870,13 +904,13 @@ impl<const N: usize> Deref for UNArr<N> {
     type Target = SliceUN;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*(self.vec.as_ref() as *const [u8] as *const SliceUN) }
+        unsafe { &*(self.get_slice() as *const [u8] as *const SliceUN) }
     }
 }
 
 impl<const N: usize> DerefMut for UNArr<N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *(self.vec.as_mut() as *mut [u8] as *mut SliceUN) }
+        unsafe { &mut *(self.get_slice_mut() as *mut [u8] as *mut SliceUN) }
     }
 }
 
@@ -962,13 +996,13 @@ impl<const N: usize> FromStr for UNArr<N> {
                     .map_err(FromStrError::ParseInt)?;
 
             if b {
-                let x = arr.vec.as_mut().last_mut().unwrap();
+                let x = arr.get_slice_mut().last_mut().unwrap();
 
                 *x = set_2(*x, e);                
 
                 b = false;
             } else {
-                if arr.vec.try_push(set_1(0, e)).is_err() {
+                if arr.push(set_1(0, e)).is_none() {
                     return Err(FromStrError::NBE(NotBigEnough(PhantomData)));
                 }
 
@@ -979,11 +1013,11 @@ impl<const N: usize> FromStr for UNArr<N> {
 
         if last != 0 {
             if b {
-                let x = arr.vec.as_mut().last_mut().unwrap();
+                let x = arr.get_slice_mut().last_mut().unwrap();
 
                 *x = set_2(*x, last);
             } else {
-                if arr.vec.try_push(set_1(0, last)).is_err() {
+                if arr.push(set_1(0, last)).is_none() {
                     return Err(FromStrError::NBE(NotBigEnough(PhantomData)));
                 }
             }
@@ -1049,6 +1083,7 @@ impl<const N: usize> TryFrom<u128> for UNArr<N> {
 }
 
 
+
 const X_MASK: u8 = 0b00001111;
 const Y_MASK: u8 = 0b11110000;
 
@@ -1073,6 +1108,8 @@ mod tests {
     use super::*;
 
     #[test]
+    // todo: this was all tested on a little endian machine,i dunno if it works correctly on a  big
+    // endian one
     fn it_works() {
         let mut a = 0b00100001;        
 
@@ -1106,13 +1143,6 @@ mod tests {
     }
 
     #[test]
-    fn iter() {
-        let a = UN::from(100u8);
-
-        assert_eq!(a.iter().collect::<Vec<u8>>(), [1, 0, 0])        
-    }
-
-    #[test]
     fn order() {
         let a = UN::from(100u8);
 
@@ -1140,5 +1170,34 @@ mod tests {
         let a = <UNArr<4>>::try_from(1000000u32).unwrap();
 
         assert_eq!(a.ajust("."), "1.000.000")
+    }
+
+    #[test]
+    fn wrapping_sub() {
+        
+        let mut a = <UNArr<3>>::try_from(6u8).unwrap();
+         
+        let x = <UNArr<3>>::try_from(3u8).unwrap();
+        a.wrapping_sub(x);
+        
+        assert_eq!(a, x);
+        
+        let mut a = <UNArr<3>>::try_from(10u8).unwrap();
+        
+        let x = <UNArr<3>>::try_from(9u8).unwrap();
+        a.wrapping_sub(x);
+        
+        assert_eq!(a, UN::from(1u8)); 
+        
+        let mut a = <UNArr<3>>::try_from(1000u16).unwrap();
+        
+        let x = <UNArr<3>>::try_from(999u16).unwrap();
+        a.wrapping_sub(x);
+        
+        assert_eq!(a, UN::from(1u8));
+        
+        a.wrapping_sub(x);
+         
+        assert_eq!(UN::from(999001u32), a);    
     }
 }
