@@ -568,6 +568,21 @@ impl SliceUN {
         }
     }
 
+    /// Creates a new string of `self` number with the thousands separator specified as `rep`.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use unsized_int::UN;
+    /// 
+    /// let a = UN::from(1000u16);
+    /// 
+    /// assert_eq!(a.ajust("."), "1.000");
+    /// 
+    /// let a = UN::from(1000000u32);
+    /// 
+    /// assert_eq!(a.ajust("."), "1.000.000");
+    /// ```
     pub fn ajust(&self, rep: &str) -> String {
         use std::fmt::Write;
 
